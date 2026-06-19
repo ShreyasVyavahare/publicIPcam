@@ -48,7 +48,7 @@ app.use((req, res, next) => {
 });
 
 // Serve ipcam.html at root
-app.use(express.static(path.dirname(process.argv[1])));
+app.use(express.static(__dirname));
 
 // ── state ─────────────────────────────────────────────────────────────────────
 
