@@ -1,0 +1,14 @@
+{
+  "name": "ipcam-relay",
+  "version": "1.0.0",
+  "description": "IPCam relay server — receives frames from browser, serves /shot.jpg",
+  "main": "relay.js",
+  "scripts": {
+    "start": "node relay.js",
+    "tunnel": "npx localtunnel --port 3000"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  }
+}

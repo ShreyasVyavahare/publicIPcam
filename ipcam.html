@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WebCam Host — IPCam</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Inter:wght@300;400;600&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:       #0a0c0f;
+    --panel:    #111418;
+    --border:   #1e2530;
+    --accent:   #00e5a0;
+    --warn:     #ff4d4d;
+    --muted:    #3a4454;
+    --text:     #c8d6e8;
+    --mono:     'Share Tech Mono', monospace;
+    --sans:     'Inter', sans-serif;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  /* ─── TOP BAR ─── */
+  header {
+    width: 100%;
+    background: var(--panel);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky; top: 0; z-index: 100;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 1.1rem;
+    color: var(--accent);
+    letter-spacing: 2px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .logo .dot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--warn);
+    box-shadow: 0 0 8px var(--warn);
+    animation: blink 1.6s ease-in-out infinite;
+  }
+  .logo .dot.live { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  .status-bar {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    color: var(--muted);
+    display: flex; gap: 18px;
+  }
+  .status-bar span { display: flex; align-items: center; gap: 5px; }
+  .status-bar .val { color: var(--accent); }
+
+  /* ─── LOGIN OVERLAY ─── */
+  #loginOverlay {
+    position: fixed; inset: 0; z-index: 999;
+    background: rgba(10,12,15,.97);
+    display: flex; align-items: center; justify-content: center;
+  }
+  .login-box {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 40px 36px;
+    width: 360px;
+    max-width: 94vw;
+  }
+  .login-box h2 {
+    font-family: var(--mono);
+    color: var(--accent);
+    font-size: 1rem;
+    letter-spacing: 3px;
+    margin-bottom: 6px;
+  }
+  .login-box p { font-size: .8rem; color: var(--muted); margin-bottom: 28px; }
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block; font-size: .72rem; color: var(--muted);
+    text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%; background: var(--bg);
+    border: 1px solid var(--border); border-radius: 3px;
+    color: var(--text); font-family: var(--mono); font-size: .9rem;
+    padding: 10px 12px; outline: none;
+    transition: border-color .2s;
+  }
+  .field input:focus { border-color: var(--accent); }
+  .btn-primary {
+    width: 100%; background: var(--accent); color: #000;
+    font-family: var(--mono); font-size: .9rem; font-weight: 700;
+    letter-spacing: 2px; border: none; border-radius: 3px;
+    padding: 12px; cursor: pointer; margin-top: 8px;
+    transition: opacity .2s;
+  }
+  .btn-primary:hover { opacity: .85; }
+  #loginError {
+    color: var(--warn); font-size: .78rem; margin-top: 12px;
+    font-family: var(--mono); min-height: 18px;
+  }
+
+  /* ─── MAIN GRID ─── */
+  main {
+    width: 100%; max-width: 1100px;
+    padding: 28px 20px;
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    gap: 20px;
+  }
+  @media(max-width:760px){ main{ grid-template-columns:1fr; } }
+
+  /* ─── VIDEO PANEL ─── */
+  .cam-panel {
+    background: #000;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+  }
+  .cam-panel video {
+    width: 100%; display: block;
+    filter: brightness(.95) contrast(1.05);
+    min-height: 260px; background:#000;
+  }
+  .cam-overlay {
+    position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      transparent 0px,
+      transparent 3px,
+      rgba(0,0,0,.04) 3px,
+      rgba(0,0,0,.04) 4px
+    );
+  }
+  .cam-label {
+    position: absolute; top: 10px; left: 12px;
+    font-family: var(--mono); font-size: .7rem; color: rgba(0,229,160,.7);
+    letter-spacing: 1px;
+    text-shadow: 0 0 6px rgba(0,229,160,.4);
+  }
+  .cam-ts {
+    position: absolute; bottom: 10px; right: 12px;
+    font-family: var(--mono); font-size: .68rem; color: rgba(255,255,255,.4);
+  }
+  .rec-indicator {
+    position: absolute; top: 10px; right: 12px;
+    display: flex; align-items: center; gap: 5px;
+    font-family: var(--mono); font-size: .65rem; color: var(--warn);
+    opacity: 0;
+    transition: opacity .3s;
+  }
+  .rec-indicator.active { opacity: 1; }
+  .rec-indicator .rdot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--warn);
+    animation: blink .9s ease-in-out infinite;
+  }
+
+  /* ─── SIDEBAR ─── */
+  .sidebar { display: flex; flex-direction: column; gap: 16px; }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 18px 16px;
+  }
+  .card-title {
+    font-family: var(--mono); font-size: .7rem;
+    color: var(--muted); letter-spacing: 2px;
+    text-transform: uppercase; margin-bottom: 14px;
+    border-bottom: 1px solid var(--border); padding-bottom: 8px;
+  }
+
+  /* snapshot preview */
+  #snapPreview {
+    width: 100%; border-radius: 3px;
+    border: 1px solid var(--border);
+    display: block; background: #000;
+    min-height: 80px;
+  }
+  .snap-meta {
+    font-family: var(--mono); font-size: .66rem;
+    color: var(--muted); margin-top: 7px;
+    display: flex; justify-content: space-between;
+  }
+  .snap-meta span { color: var(--accent); }
+
+  /* endpoint */
+  .endpoint-row {
+    display: flex; align-items: center;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .endpoint-row code {
+    flex: 1; padding: 8px 10px;
+    font-family: var(--mono); font-size: .75rem;
+    color: var(--accent); word-break: break-all;
+  }
+  .copy-btn {
+    background: var(--muted); border: none;
+    color: #fff; font-size: .7rem; padding: 8px 12px;
+    cursor: pointer; font-family: var(--mono);
+    transition: background .2s;
+  }
+  .copy-btn:hover { background: var(--accent); color: #000; }
+
+  /* controls */
+  .ctrl-row {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-bottom: 12px;
+  }
+  .btn {
+    flex: 1; min-width: 80px;
+    padding: 9px 12px; border-radius: 3px;
+    font-family: var(--mono); font-size: .78rem;
+    letter-spacing: 1px; cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--bg); color: var(--text);
+    transition: all .2s;
+  }
+  .btn:hover { border-color: var(--accent); color: var(--accent); }
+  .btn.danger { border-color: var(--warn); color: var(--warn); }
+  .btn.danger:hover { background: var(--warn); color: #000; }
+  .btn.go { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 700; }
+  .btn.go:hover { opacity: .85; }
+  .btn:disabled { opacity:.35; cursor:not-allowed; }
+
+  /* settings rows */
+  .setting-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 7px 0; border-bottom: 1px solid var(--border);
+    font-size: .8rem;
+  }
+  .setting-row:last-child { border-bottom: none; }
+  .setting-row label { color: var(--muted); font-size: .75rem; }
+  .setting-row select, .setting-row input[type=number] {
+    background: var(--bg); border: 1px solid var(--border);
+    color: var(--text); font-family: var(--mono); font-size: .75rem;
+    padding: 4px 8px; border-radius: 2px; outline: none;
+    max-width: 110px;
+  }
+  .toggle-switch {
+    position: relative; width: 36px; height: 20px;
+    flex-shrink: 0;
+  }
+  .toggle-switch input { opacity:0; width:0; height:0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: var(--muted); border-radius: 20px;
+    transition: .3s;
+  }
+  .slider:before {
+    content:''; position:absolute;
+    width:14px;height:14px; left:3px; bottom:3px;
+    background:#fff; border-radius:50%; transition:.3s;
+  }
+  input:checked + .slider { background: var(--accent); }
+  input:checked + .slider:before { transform: translateX(16px); }
+
+  /* log */
+  #logBox {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 3px; padding: 10px;
+    height: 120px; overflow-y: auto;
+    font-family: var(--mono); font-size: .68rem;
+    color: var(--muted); line-height: 1.7;
+  }
+  #logBox .lg-ok { color: var(--accent); }
+  #logBox .lg-err { color: var(--warn); }
+  #logBox .lg-info { color: #6eb4ff; }
+
+  /* hidden canvas */
+  #captureCanvas { display: none; }
+
+  /* QR placeholder */
+  #qrWrap {
+    text-align: center; padding: 16px 0;
+  }
+  #qrImg {
+    width: 120px; height: 120px;
+    border: 1px solid var(--border);
+    display: inline-block;
+  }
+  #qrHint {
+    font-family: var(--mono); font-size: .65rem;
+    color: var(--muted); margin-top: 8px;
+  }
+
+  /* toast */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--accent); color: #000;
+    font-family: var(--mono); font-size: .8rem;
+    padding: 10px 18px; border-radius: 3px;
+    opacity: 0; transition: opacity .3s;
+    pointer-events: none; z-index: 9999;
+  }
+  #toast.show { opacity: 1; }
+
+  canvas#captureCanvas { display:none; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="loginOverlay">
+  <div class="login-box">
+    <h2>// IPCAM HOST</h2>
+    <p>Enter operator credentials to start broadcasting.</p>
+    <div class="field">
+      <label>Username</label>
+      <input type="text" id="loginUser" autocomplete="off" placeholder="admin" />
+    </div>
+    <div class="field">
+      <label>Password</label>
+      <input type="password" id="loginPass" placeholder="••••••••" />
+    </div>
+    <div class="field">
+      <label>Stream Key <span style="color:#3a4454;font-size:.65rem;">(optional extra auth)</span></label>
+      <input type="text" id="loginKey" autocomplete="off" placeholder="leave blank to skip" />
+    </div>
+    <button class="btn-primary" onclick="doLogin()">CONNECT &amp; START</button>
+    <div id="loginError"></div>
+    <p style="margin-top:18px;font-size:.7rem;color:#3a4454;">
+      Default: <code style="color:#6eb4ff">admin</code> / <code style="color:#6eb4ff">ipcam2024</code>
+    </p>
+  </div>
+</div>
+
+<!-- ── HEADER ── -->
+<header>
+  <div class="logo">
+    <div class="dot" id="liveDot"></div>
+    IPCAM-HOST
+  </div>
+  <div class="status-bar">
+    <span>FPS <span class="val" id="fpsVal">--</span></span>
+    <span>FRAMES <span class="val" id="frameCount">0</span></span>
+    <span>UPTIME <span class="val" id="uptimeVal">00:00</span></span>
+    <span id="userLabel" style="color:#6eb4ff"></span>
+  </div>
+</header>
+
+<!-- ── MAIN ── -->
+<main>
+  <!-- Camera feed -->
+  <div class="cam-panel">
+    <video id="video" autoplay playsinline muted></video>
+    <div class="cam-overlay"></div>
+    <div class="cam-label" id="camLabel">CAM-01 · IDLE</div>
+    <div class="cam-ts" id="camTs"></div>
+    <div class="rec-indicator" id="recIndicator">
+      <div class="rdot"></div> REC
+    </div>
+  </div>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+
+    <!-- Live snapshot -->
+    <div class="card">
+      <div class="card-title">Last Frame</div>
+      <img id="snapPreview" src="" alt="No frame yet" />
+      <div class="snap-meta">
+        <span id="snapSize">-- KB</span>
+        <span id="snapTs">--</span>
+      </div>
+    </div>
+
+    <!-- Endpoint -->
+    <div class="card">
+      <div class="card-title">Shot Endpoint
+        <span id="relayStatusDot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-left:8px;vertical-align:middle;transition:background .3s;" title="Relay status"></span>
+      </div>
+      <div class="endpoint-row">
+        <code id="shotUrl">http://127.0.0.1:3000/shot.jpg</code>
+        <button class="copy-btn" onclick="copyEndpoint()">COPY</button>
+      </div>
+      <div style="font-size:.72rem;color:var(--muted);line-height:1.6">
+        Open the URL in any browser or use in VMS software. Refreshing loads the latest frame.
+        <br><br>
+        <span style="color:#6eb4ff">?key=YOUR_KEY</span> param required if stream key is set.
+        <br><br>
+        Also available: <span style="color:#6eb4ff">/mjpeg</span> for continuous stream in VLC.
+      </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="card">
+      <div class="card-title">Controls</div>
+      <div class="ctrl-row">
+        <button class="btn go" id="btnStart" onclick="startStream()">▶ START</button>
+        <button class="btn danger" id="btnStop" onclick="stopStream()" disabled>■ STOP</button>
+      </div>
+      <div class="ctrl-row">
+        <button class="btn" onclick="switchCamera()">⇄ FLIP CAM</button>
+        <button class="btn" onclick="takeManualSnap()">📷 SNAP</button>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="card">
+      <div class="card-title">Settings</div>
+      <div class="setting-row">
+        <label>Resolution</label>
+        <select id="resSelect">
+          <option value="320x240">320×240</option>
+          <option value="640x480" selected>640×480</option>
+          <option value="1280x720">1280×720</option>
+          <option value="1920x1080">1920×1080</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <label>Capture FPS</label>
+        <input type="number" id="fpsInput" value="5" min="1" max="30" style="width:60px" />
+      </div>
+      <div class="setting-row">
+        <label>JPEG Quality</label>
+        <input type="number" id="qualInput" value="80" min="10" max="100" style="width:60px" />
+      </div>
+      <div class="setting-row">
+        <label>Scanlines overlay</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="scanlinesToggle" checked onchange="toggleScanlines(this)" />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row">
+        <label>Timestamp burn-in</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tsToggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+      <div class="setting-row" style="flex-direction:column;align-items:flex-start;gap:6px;padding-top:10px;">
+        <label style="color:var(--accent)">Relay Server URL</label>
+        <input type="text" id="relayUrl"
+          value="http://127.0.0.1:3000"
+          style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:3px;color:var(--text);font-family:var(--mono);font-size:.75rem;padding:7px 10px;outline:none;"
+          placeholder="http://127.0.0.1:3000" />
+        <span style="font-size:.65rem;color:var(--muted)">Frames are pushed here → served as /shot.jpg</span>
+      </div>
+      <div class="setting-row" style="margin-top:4px;">
+        <label>Push to relay</label>
+        <label class="toggle-switch">
+          <input type="checkbox" id="pushToggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </div>
+
+    <!-- QR -->
+    <div class="card">
+      <div class="card-title">Scan to View</div>
+      <div id="qrWrap">
+        <canvas id="qrImg" width="120" height="120"></canvas>
+        <div id="qrHint">Start stream to generate QR</div>
+      </div>
+    </div>
+
+    <!-- Log -->
+    <div class="card">
+      <div class="card-title">Event Log</div>
+      <div id="logBox"></div>
+    </div>
+
+  </div>
+</main>
+
+<!-- Snapshot viewer page simulation -->
+<div id="shotViewer" style="display:none;position:fixed;inset:0;background:#000;z-index:500;align-items:center;justify-content:center;flex-direction:column;">
+  <img id="shotViewImg" src="" style="max-width:100%;max-height:90vh;display:block;" />
+  <button onclick="closeShotViewer()" style="margin-top:16px;background:none;border:1px solid #fff;color:#fff;padding:8px 20px;cursor:pointer;font-family:monospace;">✕ CLOSE</button>
+</div>
+
+<canvas id="captureCanvas"></canvas>
+
+<div id="toast"></div>
+
+<script>
+// ─── CONFIG ───────────────────────────────────────────────
+const CREDENTIALS = {
+  admin:    "ipcam2024",
+  operator: "watchdog99",
+  viewer:   "readonly22"   // viewer can only watch, not host
+};
+const HOST_ROLES = ["admin","operator"];
+
+// ─── STATE ────────────────────────────────────────────────
+let stream = null;
+let captureInterval = null;
+let currentUser = null;
+let streamKey = "";
+let frames = 0;
+let startTime = null;
+let facingMode = "environment";
+let latestJpeg = null;   // base64 data URL of last frame
+let uptimeTimer = null;
+let fpsTracker = { count:0, last: Date.now() };
+
+const video    = document.getElementById("video");
+const canvas   = document.getElementById("captureCanvas");
+const ctx      = canvas.getContext("2d");
+
+// ─── LOGIN ────────────────────────────────────────────────
+function doLogin() {
+  const u = document.getElementById("loginUser").value.trim();
+  const p = document.getElementById("loginPass").value;
+  const k = document.getElementById("loginKey").value.trim();
+  const err = document.getElementById("loginError");
+
+  if (!CREDENTIALS[u] || CREDENTIALS[u] !== p) {
+    err.textContent = "✗ Invalid credentials.";
+    return;
+  }
+  if (!HOST_ROLES.includes(u)) {
+    err.textContent = "✗ This account does not have host privileges.";
+    return;
+  }
+  streamKey = k;
+  currentUser = u;
+  document.getElementById("loginOverlay").style.display = "none";
+  document.getElementById("userLabel").textContent = `USR:${u.toUpperCase()}`;
+  log(`Authenticated as ${u}`, "ok");
+  log("Camera access will be requested on START", "info");
+  buildShotUrl();
+}
+
+// ─── STREAM ───────────────────────────────────────────────
+async function startStream() {
+  const [w,h] = document.getElementById("resSelect").value.split("x").map(Number);
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { width:{ideal:w}, height:{ideal:h}, facingMode },
+      audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    canvas.width  = w;
+    canvas.height = h;
+
+    const fps = parseInt(document.getElementById("fpsInput").value) || 5;
+    captureInterval = setInterval(captureFrame, 1000 / fps);
+
+    startTime = Date.now();
+    uptimeTimer = setInterval(updateUptime, 1000);
+    fpsTracker = { count:0, last: Date.now() };
+
+    document.getElementById("btnStart").disabled = true;
+    document.getElementById("btnStop").disabled  = false;
+    document.getElementById("liveDot").classList.add("live");
+    document.getElementById("recIndicator").classList.add("active");
+    document.getElementById("camLabel").textContent = `CAM-01 · LIVE ${w}×${h}`;
+
+    log(`Stream started · ${w}×${h} @ ${fps}fps`, "ok");
+    buildShotUrl();
+    generateQR();
+    installShotRoute();
+
+  } catch(e) {
+    log("Camera error: " + e.message, "err");
+  }
+}
+
+function stopStream() {
+  if (stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  clearInterval(captureInterval);
+  clearInterval(uptimeTimer);
+  captureInterval = null;
+
+  document.getElementById("btnStart").disabled = false;
+  document.getElementById("btnStop").disabled  = true;
+  document.getElementById("liveDot").classList.remove("live");
+  document.getElementById("recIndicator").classList.remove("active");
+  document.getElementById("camLabel").textContent = "CAM-01 · IDLE";
+  document.getElementById("fpsVal").textContent = "--";
+  log("Stream stopped", "err");
+}
+
+async function switchCamera() {
+  facingMode = facingMode === "environment" ? "user" : "environment";
+  if (stream) { stopStream(); await startStream(); }
+  log(`Switched to ${facingMode} camera`, "info");
+}
+
+// ─── CAPTURE ──────────────────────────────────────────────
+function captureFrame() {
+  if (!video.videoWidth) return;
+  const qual = parseInt(document.getElementById("qualInput").value) / 100;
+
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+  // optional burn-in timestamp
+  if (document.getElementById("tsToggle").checked) {
+    const ts = new Date().toISOString().replace("T"," ").slice(0,19);
+    ctx.font = "12px 'Share Tech Mono', monospace";
+    ctx.fillStyle = "rgba(0,0,0,.5)";
+    ctx.fillRect(4, canvas.height-22, 190, 18);
+    ctx.fillStyle = "#00e5a0";
+    ctx.fillText(ts, 8, canvas.height-8);
+  }
+
+  latestJpeg = canvas.toDataURL("image/jpeg", qual);
+
+  // push to relay server (non-blocking)
+  pushToRelay(latestJpeg);
+
+  // update preview
+  document.getElementById("snapPreview").src = latestJpeg;
+  const kb = Math.round((latestJpeg.length * 3/4) / 1024);
+  document.getElementById("snapSize").textContent = `${kb} KB`;
+  document.getElementById("snapTs").textContent = new Date().toLocaleTimeString();
+
+  frames++;
+  document.getElementById("frameCount").textContent = frames;
+
+  // fps tracking
+  fpsTracker.count++;
+  const now = Date.now();
+  if (now - fpsTracker.last >= 1000) {
+    document.getElementById("fpsVal").textContent = fpsTracker.count;
+    fpsTracker.count = 0;
+    fpsTracker.last = now;
+  }
+}
+
+function takeManualSnap() {
+  captureFrame();
+  toast("Snapshot captured");
+}
+
+// ─── RELAY PUSH ───────────────────────────────────────────
+let pushFailCount = 0;
+
+async function pushToRelay(jpeg) {
+  if (!document.getElementById("pushToggle").checked) return;
+  const relay = document.getElementById("relayUrl").value.trim().replace(/\/$/, '');
+  if (!relay) return;
+
+  const url = streamKey ? `${relay}/push?key=${encodeURIComponent(streamKey)}` : `${relay}/push`;
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: streamKey, frame: jpeg }),
+    });
+    if (res.ok) {
+      pushFailCount = 0;
+      updateRelayStatus(true);
+    } else {
+      throw new Error(`HTTP ${res.status}`);
+    }
+  } catch(e) {
+    pushFailCount++;
+    updateRelayStatus(false);
+    if (pushFailCount === 1 || pushFailCount % 20 === 0) {
+      log(`Relay push failed: ${e.message}`, "err");
+    }
+  }
+}
+
+function updateRelayStatus(ok) {
+  const el = document.getElementById("relayStatusDot");
+  if (!el) return;
+  el.style.background = ok ? "var(--accent)" : "var(--warn)";
+  el.title = ok ? "Relay connected" : "Relay unreachable";
+}
+
+function installShotRoute() {
+  window.__getLatestFrame = () => latestJpeg;
+  window.__streamKey = streamKey;
+  buildShotUrl();
+}
+
+// Opens shot viewer when URL hash is #/shot.jpg
+window.addEventListener("hashchange", handleHashRoute);
+window.addEventListener("load", handleHashRoute);
+
+function handleHashRoute() {
+  if (location.hash === "#/shot.jpg") {
+    openShotViewer();
+  }
+}
+
+function openShotViewer() {
+  const k = new URLSearchParams(location.search).get("key") || "";
+  if (streamKey && k !== streamKey) {
+    alert("401 Unauthorized — wrong stream key");
+    history.replaceState(null,"",location.pathname);
+    return;
+  }
+  if (!latestJpeg) {
+    alert("503 — No frame available yet. Start the stream first.");
+    history.replaceState(null,"",location.pathname);
+    return;
+  }
+  document.getElementById("shotViewImg").src = latestJpeg;
+  const el = document.getElementById("shotViewer");
+  el.style.display = "flex";
+}
+
+function closeShotViewer() {
+  document.getElementById("shotViewer").style.display = "none";
+  history.replaceState(null,"",location.pathname);
+}
+
+// ─── SHOT URL ─────────────────────────────────────────────
+function buildShotUrl() {
+  const relay = document.getElementById("relayUrl")?.value.trim().replace(/\/$/, '') || "http://127.0.0.1:3000";
+  let url = `${relay}/shot.jpg`;
+  if (streamKey) url += `?key=${encodeURIComponent(streamKey)}`;
+  document.getElementById("shotUrl").textContent = url;
+
+  // also update QR if streaming
+  if (stream) generateQR();
+}
+
+function copyEndpoint() {
+  const url = document.getElementById("shotUrl").textContent;
+  navigator.clipboard.writeText(url).then(() => toast("Endpoint copied!"));
+}
+
+// ─── QR CODE (mini generator) ─────────────────────────────
+function generateQR() {
+  const url = document.getElementById("shotUrl").textContent;
+  // Use a free QR API (Google Charts equivalent via goqr.me)
+  const qrApi = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(url)}&bgcolor=111418&color=00e5a0&format=png`;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    const qc = document.getElementById("qrImg");
+    const qctx = qc.getContext("2d");
+    qctx.drawImage(img, 0, 0, 120, 120);
+    document.getElementById("qrHint").textContent = "Scan to open shot.jpg";
+  };
+  img.onerror = () => {
+    document.getElementById("qrHint").textContent = "QR unavailable (offline?)";
+  };
+  img.src = qrApi;
+}
+
+// ─── UPTIME ───────────────────────────────────────────────
+function updateUptime() {
+  const s = Math.floor((Date.now() - startTime) / 1000);
+  const mm = String(Math.floor(s/60)).padStart(2,"0");
+  const ss = String(s%60).padStart(2,"0");
+  document.getElementById("uptimeVal").textContent = `${mm}:${ss}`;
+}
+
+// ─── CAMERA TIMESTAMP ─────────────────────────────────────
+setInterval(() => {
+  document.getElementById("camTs").textContent = new Date().toLocaleString();
+}, 1000);
+
+// ─── SCANLINES ────────────────────────────────────────────
+function toggleScanlines(el) {
+  document.querySelector(".cam-overlay").style.display = el.checked ? "block" : "none";
+}
+
+// ─── LOG ──────────────────────────────────────────────────
+function log(msg, type="info") {
+  const box = document.getElementById("logBox");
+  const ts  = new Date().toLocaleTimeString();
+  const cls = type === "ok" ? "lg-ok" : type === "err" ? "lg-err" : "lg-info";
+  box.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  box.scrollTop = box.scrollHeight;
+}
+
+// ─── RELAY URL live update ────────────────────────────────
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("relayUrl").addEventListener("change", buildShotUrl);
+});
+
+// ─── TOAST ────────────────────────────────────────────────
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+</script>
+
+<!-- ─── RELAY INSTRUCTIONS ─────────────────────────────── -->
+<!--
+  HOW TO EXPOSE /shot.jpg OVER THE INTERNET
+  ==========================================
+  This HTML file handles everything client-side.
+  To serve real /shot.jpg to external clients over the internet,
+  run the included relay script alongside this file:
+
+  OPTION A — Node.js relay (recommended):
+  ----------------------------------------
+  1. npm install express cors
+  2. Create relay.js (see below) in the same folder
+  3. node relay.js
+  4. Use a tunnel: npx localtunnel --port 3000
+     Or deploy to Render / Railway / Fly.io
+  5. Your /shot.jpg URL: https://YOUR-TUNNEL.loca.lt/shot.jpg
+
+  relay.js snippet:
+  -----------------
+  const express = require('express');
+  const app = express();
+  const cors = require('cors');
+  app.use(cors());
+
+  let latestFrame = null;
+  const STREAM_KEY = process.env.STREAM_KEY || '';
+
+  // Browser pushes frames here
+  app.post('/push', express.json({limit:'2mb'}), (req,res) => {
+    const { key, frame } = req.body;
+    if (STREAM_KEY && key !== STREAM_KEY) return res.status(401).send('Unauthorized');
+    latestFrame = Buffer.from(frame.split(',')[1], 'base64');
+    res.send('ok');
+  });
+
+  // Clients fetch here
+  app.get('/shot.jpg', (req,res) => {
+    const k = req.query.key || '';
+    if (STREAM_KEY && k !== STREAM_KEY) return res.status(401).send('Unauthorized');
+    if (!latestFrame) return res.status(503).send('No frame yet');
+    res.set('Content-Type','image/jpeg');
+    res.set('Cache-Control','no-store');
+    res.send(latestFrame);
+  });
+
+  app.listen(3000, () => console.log('Relay on :3000'));
+-->
+</body>
+</html>
