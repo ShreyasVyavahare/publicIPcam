@@ -62,24 +62,59 @@ let totalPushes    = 0;
  * POST /push
  * Browser sends: { key?: string, frame: "data:image/jpeg;base64,..." }
  */
-app.post('/push', express.json({ limit: '4mb' }), (req, res) => {
-  if (!keyOk(req)) {
-    return res.status(401).json({ error: 'Invalid stream key' });
-  }
-
-  const { frame } = req.body || {};
-  if (!frame || !frame.startsWith('data:image/jpeg')) {
-    return res.status(400).json({ error: 'Missing or invalid frame data' });
-  }
-
+app.post('/push', express.json({ limit: '10mb' }), (req, res) => {
   try {
-    const b64 = frame.split(',')[1];
-    latestFrame  = Buffer.from(b64, 'base64');
+    console.log('POST /push received');
+
+    if (!keyOk(req)) {
+      console.log('Invalid stream key');
+      return res.status(401).json({ error: 'Invalid stream key' });
+    }
+
+    const { frame } = req.body || {};
+
+    if (!frame) {
+      console.log('NO FRAME RECEIVED');
+      return res.status(400).json({ error: 'Missing frame data' });
+    }
+
+    console.log('Frame prefix:', frame.substring(0, 50));
+
+    // Accept jpeg/png/webp
+    if (!frame.startsWith('data:image/')) {
+      console.log('INVALID IMAGE FORMAT');
+      return res.status(400).json({
+        error: 'Expected data:image/*;base64,...'
+      });
+    }
+
+    const parts = frame.split(',');
+
+    if (parts.length < 2) {
+      console.log('INVALID BASE64 FORMAT');
+      return res.status(400).json({
+        error: 'Malformed image data'
+      });
+    }
+
+    latestFrame = Buffer.from(parts[1], 'base64');
     lastPushTime = new Date();
     totalPushes++;
-    res.json({ ok: true, pushed: totalPushes });
+
+    console.log(
+      `FRAME ACCEPTED | size=${latestFrame.length} bytes | total=${totalPushes}`
+    );
+
+    res.json({
+      ok: true,
+      pushed: totalPushes
+    });
+
   } catch (e) {
-    res.status(500).json({ error: e.message });
+    console.error('PUSH ERROR:', e);
+    res.status(500).json({
+      error: e.message
+    });
   }
 });
 
